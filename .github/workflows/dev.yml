@@ -1,0 +1,58 @@
+name: dev CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types:
+      - closed
+    branches:
+      - master
+
+jobs:
+  build:
+    name: 打包任务
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    steps:
+    - name: 拉取仓库代码
+      id: checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: 配置 JDK 11
+      id: jdk
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: 配置私密环境
+      id: secret
+      run: (echo "${SIGNING_KEY}" | base64 -d > ./tmp.jks) && (echo -n "${APP_CENTER_SECRET}" > ./app/APP_CENTER_SECRET)
+      env:
+        APP_CENTER_SECRET: ${{ secrets.APP_CENTER_SECRET }}
+        SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+
+    - name: Gradle 打包
+      id: gradle
+      run: chmod +x gradlew && ./gradlew :app:assembleDev
+      env:
+        ORG_GRADLE_PROJECT_androidStorePassword: ${{ secrets.STORE_PASSWORD }}
+        ORG_GRADLE_PROJECT_androidKeyPassword: ${{ secrets.KEY_PASSWORD }}
+        ORG_GRADLE_PROJECT_androidKeyAlias: ${{ secrets.KEY_ALIAS }}
+        ORG_GRADLE_PROJECT_androidStoreFile: ../tmp.jks
+
+    - name: 读取打包结果
+      id: result
+      run: echo "apk=`find ./app/build/outputs/apk/dev/ -name "*.apk" -exec basename {} \;`" >> $GITHUB_OUTPUT
+
+    - name: 存档
+      id: artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ steps.result.outputs.apk }}
+        path: ./app/build/outputs/apk/dev/${{ steps.result.outputs.apk }}

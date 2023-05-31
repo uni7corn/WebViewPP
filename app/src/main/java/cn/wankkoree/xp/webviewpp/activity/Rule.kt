@@ -3,7 +3,6 @@ package cn.wankkoree.xp.webviewpp.activity
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import android.transition.Slide
-import android.util.Log
 import android.view.View
 import androidx.core.widget.doAfterTextChanged
 import cn.wankkoree.xp.webviewpp.BuildConfig
@@ -24,7 +23,8 @@ import com.github.kittinunf.fuel.Fuel
 import com.github.kittinunf.fuel.gson.responseObject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.gson.Gson
-import com.highcapable.yukihookapi.hook.factory.modulePrefs
+import com.highcapable.yukihookapi.hook.factory.prefs
+import com.highcapable.yukihookapi.hook.log.loggerE
 import com.highcapable.yukihookapi.hook.xposed.application.ModuleApplication
 
 class Rule : AppCompatActivity() {
@@ -66,7 +66,7 @@ class Rule : AppCompatActivity() {
                 setView(dialogBinding.root)
             }.show().also { dialog ->
                 dialogBinding.dialogCloudRulesVersions.doAfterTextChanged { version ->
-                    Fuel.get("${modulePrefs("module").get(ModuleSP.data_source)}/rules/$pkg/$version.json")
+                    Fuel.get("${prefs("module").get(ModuleSP.data_source)}/rules/$pkg/$version.json")
                         .responseObject<HookRules> { _, _, result ->
                             result.fold({ rules ->
                                 dialogBinding.dialogCloudRulesRules.removeAllViews()
@@ -285,13 +285,14 @@ class Rule : AppCompatActivity() {
                                     dialogBinding.dialogCloudRulesRules.addView(v)
                                 }
                             }, { e ->
-                                Log.e(BuildConfig.APPLICATION_ID, getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules)), e)
+                                loggerE(BuildConfig.APPLICATION_ID, getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules)), e)
+                                AppCenterTool.trackError(e, mapOf("msg" to getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules))), null)
                                 application.toast(getString(R.string.pull_failed, pkg+' '+version+' '+getString(R.string.cloud_rules))+'\n'+getString(R.string.please_set_custom_hook_rules_then_push_rules_to_rules_repos), false)
                                 dialog.cancel()
                             })
                         }
                 }
-                Fuel.get("${modulePrefs("module").get(ModuleSP.data_source)}/rules/$pkg/metadata.json")
+                Fuel.get("${prefs("module").get(ModuleSP.data_source)}/rules/$pkg/metadata.json")
                     .responseObject<Metadata> { _, _, result ->
                         result.fold({ metadata ->
                             dialogBinding.dialogCloudRulesVersions.setSimpleItems(metadata.versions.toTypedArray())
@@ -302,7 +303,8 @@ class Rule : AppCompatActivity() {
                                 application.toast(getString(R.string.no_matching_version), false)
                             }
                         }, { e ->
-                            Log.e(BuildConfig.APPLICATION_ID, getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules)), e)
+                            loggerE(BuildConfig.APPLICATION_ID, getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules)), e)
+                            AppCenterTool.trackError(e, mapOf("msg" to getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules))), null)
                             application.toast(getString(R.string.pull_failed, pkg+' '+getString(R.string.cloud_rules))+'\n'+getString(R.string.please_set_custom_hook_rules_then_push_rules_to_rules_repos), false)
                             dialog.cancel()
                         })
@@ -322,7 +324,7 @@ class Rule : AppCompatActivity() {
                 application.toast(getString(R.string.s_cannot_be_empty, getString(R.string.rule_type)), false)
                 return@setOnClickListener
             } else {
-                with(modulePrefs("apps_$pkg")) {
+                with(prefs("apps_$pkg")) {
                     try {
                         put(AppSP.hooks, name)
                     } catch (_: ValueAlreadyExistedInSet) {
@@ -333,9 +335,9 @@ class Rule : AppCompatActivity() {
                     }
                     if (ruleName != null && ruleName != name) { // 修改名称
                         remove(AppSP.hooks, ruleName!!)
-                        remove("hook_entry_${ruleName!!}")
+                        edit { remove("hook_entry_${ruleName!!}") }
                     }
-                    putString("hook_entry_$name", when (type) {
+                    edit { putString("hook_entry_$name", when (type) {
                         // TODO: 添加更多 hook 方法
                         "hookWebView" -> Gson().toJson(
                             HookRules.HookRuleWebView(
@@ -404,10 +406,10 @@ class Rule : AppCompatActivity() {
                             )
                         )
                         else -> {
-                            Log.e(BuildConfig.APPLICATION_ID, getString(R.string.unknown_hook_method))
+                            loggerE(BuildConfig.APPLICATION_ID, getString(R.string.unknown_hook_method))
                             "{}"
                         }
-                    })
+                    }) }
                 }
                 finishAfterTransition()
             }
@@ -497,7 +499,7 @@ class Rule : AppCompatActivity() {
                     viewBinding.ruleReplaceNebulaUCSDK.visibility = View.GONE
                     viewBinding.ruleHookCrossWalk.visibility = View.GONE
                     viewBinding.ruleHookXWebView.visibility = View.GONE
-                    Log.e(BuildConfig.APPLICATION_ID, getString(R.string.unknown_hook_method))
+                    loggerE(BuildConfig.APPLICATION_ID, getString(R.string.unknown_hook_method))
                 }
             }
             refreshCode()
@@ -540,7 +542,7 @@ class Rule : AppCompatActivity() {
             viewBinding.ruleHookMethod.setText("", false)
         } else {
             viewBinding.ruleName.setText(ruleName)
-            val hookJson = modulePrefs("apps_$pkg").getString("hook_entry_$ruleName", "{}")
+            val hookJson = prefs("apps_$pkg").getString("hook_entry_$ruleName", "{}")
             try {
                 when(Gson().fromJson(hookJson, HookRules.HookRule::class.java).name) {
                     // TODO: 添加更多 hook 方法
@@ -602,7 +604,8 @@ class Rule : AppCompatActivity() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(BuildConfig.APPLICATION_ID, getString(R.string.parse_failed), e)
+                loggerE(BuildConfig.APPLICATION_ID, getString(R.string.parse_failed), e)
+                AppCenterTool.trackError(e, mapOf("msg" to getString(R.string.parse_failed)), null)
                 application.toast(getString(R.string.parse_failed), false)
                 return
             }
